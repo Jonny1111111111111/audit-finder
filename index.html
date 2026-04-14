@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -65,21 +64,12 @@ input,select { width:100%; padding:10px 12px; background:#111118; border:1px sol
   </div>
   <div id="results"><div class="loading">Scanning DeFiLlama...</div></div>
 </div>
-
 <script>
 const EXPLORERS={Ethereum:"etherscan.io",Arbitrum:"arbiscan.io",Base:"basescan.org",Optimism:"optimistic.etherscan.io",Polygon:"polygonscan.com",BSC:"bscscan.com",Avalanche:"snowtrace.io",Fantom:"ftmscan.com"};
 const KNOWN_AUDITED=["aave","uniswap","compound","curve","maker","lido","convex","yearn","sushiswap","balancer","synthetix","pancakeswap","frax","rocket-pool","eigenlayer","morpho","spark","sky","ethena","pendle","gmx","radiant","camelot","velodrome","aerodrome","stargate","layerzero","chainlink","wormhole","across","hop","synapse","beefy","alpaca","venus","benqi","trader-joe","dodo","kyberswap","1inch"];
-
 let allProtocols=[];
 let expandedId=null;
-
-function formatTvl(v){
-  if(v>=1e9)return`$${(v/1e9).toFixed(2)}B`;
-  if(v>=1e6)return`$${(v/1e6).toFixed(2)}M`;
-  if(v>=1e3)return`$${(v/1e3).toFixed(1)}K`;
-  return`$${v.toFixed(0)}`;
-}
-
+function formatTvl(v){if(v>=1e9)return`$${(v/1e9).toFixed(2)}B`;if(v>=1e6)return`$${(v/1e6).toFixed(2)}M`;if(v>=1e3)return`$${(v/1e3).toFixed(1)}K`;return`$${v.toFixed(0)}`;}
 async function fetchData(){
   document.getElementById("results").innerHTML='<div class="loading">Scanning 7000+ protocols from DeFiLlama...</div>';
   try{
@@ -87,113 +77,66 @@ async function fetchData(){
     if(!res.ok)throw new Error("API failed");
     const data=await res.json();
     allProtocols=data.filter(p=>p.tvl&&p.tvl>0).map(p=>{
-      const name=(p.name||"").toLowerCase();
-      const slug=(p.slug||"").toLowerCase();
+      const name=(p.name||"").toLowerCase();const slug=(p.slug||"").toLowerCase();
       const isKnown=KNOWN_AUDITED.some(a=>name.includes(a)||slug.includes(a));
       const hasAuditLink=p.audit_links&&p.audit_links.length>0;
       let auditStatus="likely_unaudited";
       if(isKnown||hasAuditLink)auditStatus="audited";
-      const chains=p.chains||[];
-      const evmChains=chains.filter(c=>EXPLORERS[c]);
-      return{id:p.slug||p.name,name:p.name,slug:p.slug,tvl:p.tvl,category:p.category||"Unknown",chains,evmChains,url:p.url||"",github:p.github||[],auditStatus,hasAuditLink,auditLinks:p.audit_links||[],change_1d:p.change_1d,change_7d:p.change_7d};
+      const chains=p.chains||[];const evmChains=chains.filter(c=>EXPLORERS[c]);
+      const addresses={};const addrRaw=p.address||"";
+      if(addrRaw){addrRaw.split(",").forEach(a=>{const parts=a.trim().split(":");if(parts.length===2&&parts[1].startsWith("0x")){addresses[parts[0].charAt(0).toUpperCase()+parts[0].slice(1)]=parts[1];}else if(parts.length===1&&parts[0].startsWith("0x")){addresses["Ethereum"]=parts[0];}});}
+      return{id:p.slug||p.name,name:p.name,slug:p.slug,tvl:p.tvl,category:p.category||"Unknown",chains,evmChains,url:p.url||"",github:p.github||[],auditStatus,hasAuditLink,auditLinks:p.audit_links||[],change_1d:p.change_1d,change_7d:p.change_7d,addresses};
     });
     render();
-  }catch(e){
-    document.getElementById("results").innerHTML=`<div class="error">Error: ${e.message}</div><button class="refresh-btn" onclick="fetchData()">Retry</button>`;
-  }
+  }catch(e){document.getElementById("results").innerHTML=`<div class="error">Error: ${e.message}</div><button class="refresh-btn" onclick="fetchData()">Retry</button>`;}
 }
-
 function getFiltered(){
-  const minTvl=Number(document.getElementById("minTvl").value);
-  const maxTvl=Number(document.getElementById("maxTvl").value);
-  const chain=document.getElementById("chain").value;
-  const sortBy=document.getElementById("sort").value;
-  const q=document.getElementById("search").value.toLowerCase();
-
+  const minTvl=Number(document.getElementById("minTvl").value);const maxTvl=Number(document.getElementById("maxTvl").value);
+  const chain=document.getElementById("chain").value;const sortBy=document.getElementById("sort").value;const q=document.getElementById("search").value.toLowerCase();
   let result=allProtocols.filter(p=>p.tvl>=minTvl&&p.tvl<=maxTvl);
   if(chain!=="All")result=result.filter(p=>p.chains.includes(chain));
   if(q)result=result.filter(p=>p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
-
-  if(sortBy==="tvl")result.sort((a,b)=>b.tvl-a.tvl);
-  else if(sortBy==="tvl_asc")result.sort((a,b)=>a.tvl-b.tvl);
-  else result.sort((a,b)=>{
-    const score=p=>(p.auditStatus==="likely_unaudited"?100:0)+(p.evmChains.length>0?50:0)+(p.tvl>1000000?25:0);
-    return score(b)-score(a);
-  });
+  if(sortBy==="tvl")result.sort((a,b)=>b.tvl-a.tvl);else if(sortBy==="tvl_asc")result.sort((a,b)=>a.tvl-b.tvl);
+  else result.sort((a,b)=>{const score=p=>(p.auditStatus==="likely_unaudited"?100:0)+(p.evmChains.length>0?50:0)+(p.tvl>1000000?25:0);return score(b)-score(a);});
   return result;
 }
-
 function render(){
   const filtered=getFiltered();
-  const unaudited=filtered.filter(p=>p.auditStatus==="likely_unaudited").length;
-  const audited=filtered.filter(p=>p.auditStatus==="audited").length;
-
   document.getElementById("s-total").textContent=filtered.length;
-  document.getElementById("s-unaudited").textContent=unaudited;
-  document.getElementById("s-audited").textContent=audited;
-
+  document.getElementById("s-unaudited").textContent=filtered.filter(p=>p.auditStatus==="likely_unaudited").length;
+  document.getElementById("s-audited").textContent=filtered.filter(p=>p.auditStatus==="audited").length;
+  const EM={Ethereum:"etherscan.io",Arbitrum:"arbiscan.io",Base:"basescan.org",Optimism:"optimistic.etherscan.io",Polygon:"polygonscan.com",BSC:"bscscan.com",Avalanche:"snowtrace.io",Fantom:"ftmscan.com",ethereum:"etherscan.io",arbitrum:"arbiscan.io",base:"basescan.org",optimism:"optimistic.etherscan.io",polygon:"polygonscan.com",bsc:"bscscan.com",avalanche:"snowtrace.io"};
   let html="";
   filtered.slice(0,50).forEach(p=>{
-    const isUnaudited=p.auditStatus==="likely_unaudited";
-    const statusColor=isUnaudited?"#FF3D00":"#00BFA5";
-    const statusLabel=isUnaudited?"LIKELY UNAUDITED":"AUDITED";
-    const isExpanded=expandedId===p.id;
-
-    html+=`<div class="card ${isUnaudited?'unaudited':''}" style="${isExpanded?'border-radius:10px 10px 0 0':''}" onclick="toggle('${p.id}')">
-      <div class="card-top">
-        <div><div class="card-name">${p.name}</div><div class="card-meta">${p.category} · ${p.chains.slice(0,3).join(", ")}${p.chains.length>3?' +'+( p.chains.length-3):''}</div></div>
-        <div><div class="card-tvl">${formatTvl(p.tvl)}</div><div class="card-status" style="color:${statusColor}">${statusLabel}</div></div>
-      </div>
-    </div>`;
-
-    if(isExpanded){
-      let change="";
-      if(p.change_1d!=null){
-        const c=p.change_1d;
-        change=`<span style="color:${c>=0?'#00BFA5':'#FF3D00'};margin-left:8px">24h: ${c>=0?'+':''}${c.toFixed(1)}%</span>`;
-      }
-      let auditLinksHtml="";
-      if(p.auditLinks.length>0){
-        auditLinksHtml=`<div class="expand-row"><span>Audit Links: </span>${p.auditLinks.map(l=>`<a href="${l}" target="_blank" style="color:#AA00FF;font-size:10px;display:block">${l.substring(0,60)}...</a>`).join("")}</div>`;
-      }
-      let linksHtml='<div class="links">';
-      if(p.url)linksHtml+=`<a href="${p.url}" target="_blank">Website</a>`;
-      if(p.github.length>0){
-        const gh=p.github[0].startsWith("http")?p.github[0]:`https://github.com/${p.github[0]}`;
-        linksHtml+=`<a href="${gh}" target="_blank">GitHub</a>`;
-      }
-      if(p.evmChains.length>0)linksHtml+=`<a href="https://${EXPLORERS[p.evmChains[0]]}" target="_blank">${p.evmChains[0]} Explorer</a>`;
-      linksHtml+=`<a href="https://defillama.com/protocol/${p.slug}" target="_blank" class="primary">DeFiLlama</a></div>`;
-
-      html+=`<div class="expand">
-        <div class="expand-row"><span>TVL: </span><b style="color:#FFD600">${formatTvl(p.tvl)}</b>${change}</div>
-        <div class="expand-row"><span>Chains: </span>${p.chains.join(", ")}</div>
-        <div class="expand-row"><span>Audit: </span><b style="color:${statusColor}">${statusLabel}</b></div>
-        ${auditLinksHtml}
-        ${linksHtml}
-      </div>`;
+    const isU=p.auditStatus==="likely_unaudited";const sc=isU?"#FF3D00":"#00BFA5";const sl=isU?"LIKELY UNAUDITED":"AUDITED";const isE=expandedId===p.id;
+    html+=`<div class="card ${isU?'unaudited':''}" style="${isE?'border-radius:10px 10px 0 0':''}" onclick="toggle('${p.id}')"><div class="card-top"><div><div class="card-name">${p.name}</div><div class="card-meta">${p.category} · ${p.chains.slice(0,3).join(", ")}${p.chains.length>3?' +'+(p.chains.length-3):''}</div></div><div><div class="card-tvl">${formatTvl(p.tvl)}</div><div class="card-status" style="color:${sc}">${sl}</div></div></div></div>`;
+    if(isE){
+      let ch="";if(p.change_1d!=null){const c=p.change_1d;ch=`<span style="color:${c>=0?'#00BFA5':'#FF3D00'};margin-left:8px">24h: ${c>=0?'+':''}${c.toFixed(1)}%</span>`;}
+      let al="";if(p.auditLinks.length>0){al=`<div class="expand-row"><span>Audit Links: </span>${p.auditLinks.map(l=>`<a href="${l}" target="_blank" style="color:#AA00FF;font-size:10px;display:block">${l.substring(0,50)}...</a>`).join("")}</div>`;}
+      let ct="";const ak=Object.keys(p.addresses||{});
+      if(ak.length>0){ct=`<div style="margin:10px 0;padding:10px;background:#0F1A0F;border:1px solid #00BFA530;border-radius:8px"><div style="font-size:9px;color:#00BFA5;font-weight:700;letter-spacing:1px;margin-bottom:6px">CONTRACT ADDRESSES</div>`;
+        ak.forEach(c=>{const a=p.addresses[c];const e=EM[c]||EM[c.toLowerCase()];
+          if(e){ct+=`<div style="margin-bottom:6px"><div style="font-size:9px;color:#888">${c}</div><a href="https://${e}/address/${a}#code" target="_blank" style="color:#FFD600;font-size:10px;word-break:break-all;text-decoration:none">${a}</a> <a href="https://${e}/address/${a}#code" target="_blank" style="display:inline-block;margin-left:4px;padding:3px 8px;background:#FFD60020;border:1px solid #FFD60050;border-radius:4px;color:#FFD600;font-size:9px;font-weight:700;text-decoration:none">VIEW CODE</a></div>`;}
+          else{ct+=`<div style="margin-bottom:6px"><div style="font-size:9px;color:#888">${c}</div><span style="color:#CCC;font-size:10px;word-break:break-all">${a}</span></div>`;}
+        });ct+=`</div>`;}
+      let lk='<div class="links">';if(p.url)lk+=`<a href="${p.url}" target="_blank">Website</a>`;
+      if(p.github.length>0){const gh=p.github[0].startsWith("http")?p.github[0]:`https://github.com/${p.github[0]}`;lk+=`<a href="${gh}" target="_blank">GitHub</a>`;}
+      if(p.evmChains.length>0)lk+=`<a href="https://${EXPLORERS[p.evmChains[0]]}" target="_blank">${p.evmChains[0]} Explorer</a>`;
+      lk+=`<a href="https://defillama.com/protocol/${p.slug}" target="_blank" class="primary">DeFiLlama</a></div>`;
+      html+=`<div class="expand"><div class="expand-row"><span>TVL: </span><b style="color:#FFD600">${formatTvl(p.tvl)}</b>${ch}</div><div class="expand-row"><span>Chains: </span>${p.chains.join(", ")}</div><div class="expand-row"><span>Audit: </span><b style="color:${sc}">${sl}</b></div>${ct}${al}${lk}</div>`;
     }
   });
-
   if(filtered.length===0)html='<div class="loading">No protocols found. Adjust filters.</div>';
   if(filtered.length>50)html+=`<div style="text-align:center;padding:16px;color:#555;font-size:11px">Showing 50 of ${filtered.length}. Narrow filters.</div>`;
-
   document.getElementById("results").innerHTML=html;
 }
-
-function toggle(id){
-  expandedId=expandedId===id?null:id;
-  render();
-}
-
+function toggle(id){expandedId=expandedId===id?null:id;render();}
 document.getElementById("search").addEventListener("input",render);
 document.getElementById("chain").addEventListener("change",render);
 document.getElementById("sort").addEventListener("change",render);
 document.getElementById("minTvl").addEventListener("change",render);
 document.getElementById("maxTvl").addEventListener("change",render);
-
 fetchData();
 </script>
-
 </body>
 </html>
