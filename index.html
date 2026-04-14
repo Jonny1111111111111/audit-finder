@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit Target Finder</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0A0A0F; font-family:'SF Mono','Fira Code',monospace; color:#E0E0E0; min-height:100vh; padding:16px; }
+.wrap { max-width:700px; margin:0 auto; }
+.header { text-align:center; margin-bottom:20px; }
+.tag { font-size:10px; letter-spacing:4px; color:#555; margin-bottom:4px; }
+h1 { font-size:22px; font-weight:800; background:linear-gradient(135deg,#FF3D00,#FFD600); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.sub { font-size:10px; color:#666; margin-top:4px; }
+.stats { display:flex; gap:8px; margin-bottom:16px; }
+.stat { flex:1; padding:10px 8px; background:#111118; border-radius:8px; text-align:center; }
+.stat-val { font-size:18px; font-weight:800; }
+.stat-label { font-size:8px; color:#666; margin-top:2px; }
+input,select { width:100%; padding:10px 12px; background:#111118; border:1px solid #222; border-radius:8px; color:#CCC; font-size:12px; font-family:inherit; outline:none; }
+.filters { display:flex; gap:6px; margin-bottom:12px; }
+.filters select { flex:1; min-width:100px; font-size:11px; padding:8px; }
+.tvl-row { display:flex; gap:6px; margin-bottom:16px; }
+.tvl-row > div { flex:1; }
+.tvl-row label { font-size:9px; color:#555; display:block; margin-bottom:4px; }
+.tvl-row select { font-size:11px; padding:8px; }
+.card { padding:12px 14px; background:#111118; border:1px solid #1A1A25; border-radius:10px; cursor:pointer; margin-bottom:6px; transition:all 0.2s; }
+.card.unaudited { background:#1A0A0A; border-color:#FF3D0030; }
+.card-top { display:flex; justify-content:space-between; align-items:flex-start; }
+.card-name { font-size:13px; font-weight:700; color:#EEE; }
+.card-meta { font-size:10px; color:#666; margin-top:2px; }
+.card-tvl { font-size:14px; font-weight:700; color:#FFD600; text-align:right; }
+.card-status { font-size:8px; font-weight:700; letter-spacing:1px; margin-top:2px; text-align:right; }
+.expand { padding:12px 14px; background:#0D0D14; border:1px solid #333; border-top:none; border-radius:0 0 10px 10px; font-size:11px; margin-bottom:6px; }
+.expand-row { margin-bottom:8px; }
+.expand-row span { color:#555; }
+.links { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+.links a { padding:6px 12px; background:#222; border-radius:6px; color:#CCC; font-size:10px; text-decoration:none; }
+.links a.primary { background:#FF3D0020; border:1px solid #FF3D0050; color:#FF3D00; font-weight:700; }
+.loading { text-align:center; padding:40px; color:#555; }
+.error { text-align:center; padding:20px; color:#FF3D00; }
+.refresh-btn { display:block; margin:16px auto; padding:10px 24px; background:#FF3D00; border:none; border-radius:8px; color:#fff; font-size:12px; font-family:inherit; font-weight:700; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="header">
+    <div class="tag">DEFI SECURITY TOOL</div>
+    <h1>AUDIT TARGET FINDER</h1>
+    <div class="sub">Find unaudited DeFi protocols with real TVL</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val" style="color:#AA00FF" id="s-total">0</div><div class="stat-label">PROTOCOLS</div></div>
+    <div class="stat"><div class="stat-val" style="color:#FF3D00" id="s-unaudited">0</div><div class="stat-label">LIKELY UNAUDITED</div></div>
+    <div class="stat"><div class="stat-val" style="color:#00BFA5" id="s-audited">0</div><div class="stat-label">HAS AUDIT</div></div>
+  </div>
+  <input type="text" id="search" placeholder="Search protocols..." style="margin-bottom:12px">
+  <div class="filters">
+    <select id="chain"><option value="All">All Chains</option><option>Ethereum</option><option>Arbitrum</option><option>Base</option><option>Optimism</option><option>Polygon</option><option>BSC</option><option>Avalanche</option></select>
+    <select id="sort"><option value="risk">Best Targets</option><option value="tvl">Highest TVL</option><option value="tvl_asc">Lowest TVL</option></select>
+  </div>
+  <div class="tvl-row">
+    <div><label>MIN TVL</label><select id="minTvl"><option value="100000">$100K</option><option value="500000" selected>$500K</option><option value="1000000">$1M</option><option value="5000000">$5M</option></select></div>
+    <div><label>MAX TVL</label><select id="maxTvl"><option value="5000000">$5M</option><option value="10000000">$10M</option><option value="20000000" selected>$20M</option><option value="50000000">$50M</option><option value="100000000">$100M</option></select></div>
+  </div>
+  <div id="results"><div class="loading">Scanning DeFiLlama...</div></div>
+</div>
+
+<script>
+const EXPLORERS={Ethereum:"etherscan.io",Arbitrum:"arbiscan.io",Base:"basescan.org",Optimism:"optimistic.etherscan.io",Polygon:"polygonscan.com",BSC:"bscscan.com",Avalanche:"snowtrace.io",Fantom:"ftmscan.com"};
+const KNOWN_AUDITED=["aave","uniswap","compound","curve","maker","lido","convex","yearn","sushiswap","balancer","synthetix","pancakeswap","frax","rocket-pool","eigenlayer","morpho","spark","sky","ethena","pendle","gmx","radiant","camelot","velodrome","aerodrome","stargate","layerzero","chainlink","wormhole","across","hop","synapse","beefy","alpaca","venus","benqi","trader-joe","dodo","kyberswap","1inch"];
+
+let allProtocols=[];
+let expandedId=null;
+
+function formatTvl(v){
+  if(v>=1e9)return`$${(v/1e9).toFixed(2)}B`;
+  if(v>=1e6)return`$${(v/1e6).toFixed(2)}M`;
+  if(v>=1e3)return`$${(v/1e3).toFixed(1)}K`;
+  return`$${v.toFixed(0)}`;
+}
+
+async function fetchData(){
+  document.getElementById("results").innerHTML='<div class="loading">Scanning 7000+ protocols from DeFiLlama...</div>';
+  try{
+    const res=await fetch("https://api.llama.fi/protocols");
+    if(!res.ok)throw new Error("API failed");
+    const data=await res.json();
+    allProtocols=data.filter(p=>p.tvl&&p.tvl>0).map(p=>{
+      const name=(p.name||"").toLowerCase();
+      const slug=(p.slug||"").toLowerCase();
+      const isKnown=KNOWN_AUDITED.some(a=>name.includes(a)||slug.includes(a));
+      const hasAuditLink=p.audit_links&&p.audit_links.length>0;
+      let auditStatus="likely_unaudited";
+      if(isKnown||hasAuditLink)auditStatus="audited";
+      const chains=p.chains||[];
+      const evmChains=chains.filter(c=>EXPLORERS[c]);
+      return{id:p.slug||p.name,name:p.name,slug:p.slug,tvl:p.tvl,category:p.category||"Unknown",chains,evmChains,url:p.url||"",github:p.github||[],auditStatus,hasAuditLink,auditLinks:p.audit_links||[],change_1d:p.change_1d,change_7d:p.change_7d};
+    });
+    render();
+  }catch(e){
+    document.getElementById("results").innerHTML=`<div class="error">Error: ${e.message}</div><button class="refresh-btn" onclick="fetchData()">Retry</button>`;
+  }
+}
+
+function getFiltered(){
+  const minTvl=Number(document.getElementById("minTvl").value);
+  const maxTvl=Number(document.getElementById("maxTvl").value);
+  const chain=document.getElementById("chain").value;
+  const sortBy=document.getElementById("sort").value;
+  const q=document.getElementById("search").value.toLowerCase();
+
+  let result=allProtocols.filter(p=>p.tvl>=minTvl&&p.tvl<=maxTvl);
+  if(chain!=="All")result=result.filter(p=>p.chains.includes(chain));
+  if(q)result=result.filter(p=>p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
+
+  if(sortBy==="tvl")result.sort((a,b)=>b.tvl-a.tvl);
+  else if(sortBy==="tvl_asc")result.sort((a,b)=>a.tvl-b.tvl);
+  else result.sort((a,b)=>{
+    const score=p=>(p.auditStatus==="likely_unaudited"?100:0)+(p.evmChains.length>0?50:0)+(p.tvl>1000000?25:0);
+    return score(b)-score(a);
+  });
+  return result;
+}
+
+function render(){
+  const filtered=getFiltered();
+  const unaudited=filtered.filter(p=>p.auditStatus==="likely_unaudited").length;
+  const audited=filtered.filter(p=>p.auditStatus==="audited").length;
+
+  document.getElementById("s-total").textContent=filtered.length;
+  document.getElementById("s-unaudited").textContent=unaudited;
+  document.getElementById("s-audited").textContent=audited;
+
+  let html="";
+  filtered.slice(0,50).forEach(p=>{
+    const isUnaudited=p.auditStatus==="likely_unaudited";
+    const statusColor=isUnaudited?"#FF3D00":"#00BFA5";
+    const statusLabel=isUnaudited?"LIKELY UNAUDITED":"AUDITED";
+    const isExpanded=expandedId===p.id;
+
+    html+=`<div class="card ${isUnaudited?'unaudited':''}" style="${isExpanded?'border-radius:10px 10px 0 0':''}" onclick="toggle('${p.id}')">
+      <div class="card-top">
+        <div><div class="card-name">${p.name}</div><div class="card-meta">${p.category} · ${p.chains.slice(0,3).join(", ")}${p.chains.length>3?' +'+( p.chains.length-3):''}</div></div>
+        <div><div class="card-tvl">${formatTvl(p.tvl)}</div><div class="card-status" style="color:${statusColor}">${statusLabel}</div></div>
+      </div>
+    </div>`;
+
+    if(isExpanded){
+      let change="";
+      if(p.change_1d!=null){
+        const c=p.change_1d;
+        change=`<span style="color:${c>=0?'#00BFA5':'#FF3D00'};margin-left:8px">24h: ${c>=0?'+':''}${c.toFixed(1)}%</span>`;
+      }
+      let auditLinksHtml="";
+      if(p.auditLinks.length>0){
+        auditLinksHtml=`<div class="expand-row"><span>Audit Links: </span>${p.auditLinks.map(l=>`<a href="${l}" target="_blank" style="color:#AA00FF;font-size:10px;display:block">${l.substring(0,60)}...</a>`).join("")}</div>`;
+      }
+      let linksHtml='<div class="links">';
+      if(p.url)linksHtml+=`<a href="${p.url}" target="_blank">Website</a>`;
+      if(p.github.length>0){
+        const gh=p.github[0].startsWith("http")?p.github[0]:`https://github.com/${p.github[0]}`;
+        linksHtml+=`<a href="${gh}" target="_blank">GitHub</a>`;
+      }
+      if(p.evmChains.length>0)linksHtml+=`<a href="https://${EXPLORERS[p.evmChains[0]]}" target="_blank">${p.evmChains[0]} Explorer</a>`;
+      linksHtml+=`<a href="https://defillama.com/protocol/${p.slug}" target="_blank" class="primary">DeFiLlama</a></div>`;
+
+      html+=`<div class="expand">
+        <div class="expand-row"><span>TVL: </span><b style="color:#FFD600">${formatTvl(p.tvl)}</b>${change}</div>
+        <div class="expand-row"><span>Chains: </span>${p.chains.join(", ")}</div>
+        <div class="expand-row"><span>Audit: </span><b style="color:${statusColor}">${statusLabel}</b></div>
+        ${auditLinksHtml}
+        ${linksHtml}
+      </div>`;
+    }
+  });
+
+  if(filtered.length===0)html='<div class="loading">No protocols found. Adjust filters.</div>';
+  if(filtered.length>50)html+=`<div style="text-align:center;padding:16px;color:#555;font-size:11px">Showing 50 of ${filtered.length}. Narrow filters.</div>`;
+
+  document.getElementById("results").innerHTML=html;
+}
+
+function toggle(id){
+  expandedId=expandedId===id?null:id;
+  render();
+}
+
+document.getElementById("search").addEventListener("input",render);
+document.getElementById("chain").addEventListener("change",render);
+document.getElementById("sort").addEventListener("change",render);
+document.getElementById("minTvl").addEventListener("change",render);
+document.getElementById("maxTvl").addEventListener("change",render);
+
+fetchData();
+</script>
+
+</body>
+</html>
